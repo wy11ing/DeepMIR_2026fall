@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 import wandb
 
 from dataset import TASKS
-from model import ShortChunkCNN
+from model import build_model
 
 
 def parse_args():
@@ -29,6 +29,13 @@ def parse_args():
                         help="Random crops in train, evenly spaced overlapping crops in eval")
     parser.add_argument("--crop_seconds", type=float, default=4.0)
     parser.add_argument("--eval_crops", type=int, default=10, help="Crops per clip at eval (with --random_crop)")
+    parser.add_argument("--stems", nargs="+", default=["mix"], choices=["mix", "vocals", "no_vocals"],
+                        help="Input channels, e.g. --stems vocals no_vocals (run separate.py first)")
+    parser.add_argument("--fusion", default="early", choices=["early", "late"],
+                        help="early = stems as input channels of one CNN; late = one CNN per stem, embeddings concatenated")
+    parser.add_argument("--stem_dir", default=None, help="Default: the task's stem_dir; searched recursively")
+    parser.add_argument("--activity_crop", action=argparse.BooleanOptionalAction, default=False,
+                        help="With --random_crop and a vocals stem: prefer crops where vocals are active")
     parser.add_argument("--spec_augment", action=argparse.BooleanOptionalAction, default=False,
                         help="Frequency/time masking on training spectrograms")
     parser.add_argument("--freq_mask_param", type=int, default=24)
@@ -149,6 +156,9 @@ def main():
     df = pd.read_csv(args.manifest)
     data_kwargs = dict(
         num_chunks=args.num_chunks,
+        stems=args.stems,
+        stem_dir=args.stem_dir or task["stem_dir"],
+        activity_crop=args.activity_crop,
         random_crop=args.random_crop,
         crop_seconds=args.crop_seconds,
         eval_crops=args.eval_crops,
@@ -169,7 +179,7 @@ def main():
     val_loader = DataLoader(val_set, shuffle=False, **loader_kwargs)
 
     # Model, loss, optimizer, scheduler
-    model = ShortChunkCNN(n_class=len(classes)).to(device)
+    model = build_model(len(classes), args.stems, args.fusion).to(device)
     criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     steps_per_epoch = len(train_loader)

@@ -4,7 +4,7 @@ import json
 import torch
 from torch.utils.data import DataLoader
 
-from model import ShortChunkCNN
+from model import build_model
 from dataset import TASKS
 
 import pandas as pd
@@ -35,6 +35,7 @@ def main():
     parser.add_argument("--ckpt", required=True, help="e.g. ./checkpoints/market/best_combined.pt")
     parser.add_argument("--manifest", default=None, help="Default: the checkpoint task's manifest")
     parser.add_argument("--output", default=None, help="Default: ./predictions_<task>.json")
+    parser.add_argument("--stem_dir", default=None, help="Default: the one used in training")
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--num_workers", type=int, default=4)
     args = parser.parse_args()
@@ -51,7 +52,10 @@ def main():
     classes = task["classes"]
     print(f"Task: {task_name} ({len(classes)} classes: {classes})")
 
-    model = ShortChunkCNN(n_class=len(classes)).to(device)
+    stems = train_args.get("stems", ["mix"])  # older checkpoints were trained on the mix only
+    # Width is not stored in args (some checkpoints use n_channels=128), so read it off the weights
+    n_channels = next(v.shape[0] for k, v in ckpt["model"].items() if k.endswith("layer1.conv.weight"))
+    model = build_model(len(classes), stems, train_args.get("fusion", "early"), n_channels).to(device)
     model.load_state_dict(ckpt["model"])
 
     # Rebuild the dataset with the same crop settings the model was trained with
@@ -60,6 +64,9 @@ def main():
         df[df["split"] == "test"],
         train=False,
         num_chunks=train_args["num_chunks"],
+        stems=stems,
+        stem_dir=args.stem_dir or train_args.get("stem_dir") or task["stem_dir"],
+        activity_crop=train_args.get("activity_crop", False),
         random_crop=train_args["random_crop"],
         crop_seconds=train_args["crop_seconds"],
         eval_crops=train_args["eval_crops"],

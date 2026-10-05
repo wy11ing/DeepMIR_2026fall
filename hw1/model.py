@@ -14,35 +14,19 @@ class ConvBlock(nn.Module):
         return output
 
 
-class ShortChunkCNN(nn.Module):
-    def __init__(
-        self,
-        n_channels=64, 
-        sample_rate=16000,
-        n_fft=512,
-        f_min=0.0,
-        f_max=8000.0,
-        n_mels=128,
-        n_class=6
-    ):
-        super().__init__()
+class ShortChunkEncoder(nn.Module):
+    """The 7 conv blocks + global max pool: (B, in_channels, n_mels, T) -> (B, n_channels*4)."""
 
-        # CNN
-        self.layer1 = ConvBlock(1, n_channels, pooling=2)
+    def __init__(self, n_channels=64, in_channels=1):
+        super().__init__()
+        self.layer1 = ConvBlock(in_channels, n_channels, pooling=2)
         self.layer2 = ConvBlock(n_channels, n_channels, pooling=2)
         self.layer3 = ConvBlock(n_channels, n_channels*2, pooling=2)
         self.layer4 = ConvBlock(n_channels*2, n_channels*2, pooling=2)
         self.layer5 = ConvBlock(n_channels*2, n_channels*2, pooling=2)
         self.layer6 = ConvBlock(n_channels*2, n_channels*2, pooling=2)
         self.layer7 = ConvBlock(n_channels*2, n_channels*4, pooling=2)
-
-        # Dense
-        self.dense1 = nn.Linear(n_channels*4, n_channels*4)
-        self.bn = nn.BatchNorm1d(n_channels*4)
-        self.dense2 = nn.Linear(n_channels*4, n_class)
-        self.dropout = nn.Dropout(0.5)
-        self.relu = nn.ReLU()
-
+        self.out_dim = n_channels*4
 
     def forward(self, x):
         # CNN
@@ -57,9 +41,20 @@ class ShortChunkCNN(nn.Module):
 
         if x.shape[-1] != 1:
             x = nn.MaxPool1d(x.shape[-1])(x) # Shape: (B, C, 1)
-        x = x.squeeze(2) # Shape: (B, C)
+        return x.squeeze(2) # Shape: (B, C)
 
-        # Dense
+
+class _DenseHead(nn.Module):
+    """Embedding -> logits. Attribute names match the original ShortChunkCNN so old checkpoints load."""
+
+    def _build_head(self, in_dim, hidden_dim, n_class):
+        self.dense1 = nn.Linear(in_dim, hidden_dim)
+        self.bn = nn.BatchNorm1d(hidden_dim)
+        self.dense2 = nn.Linear(hidden_dim, n_class)
+        self.dropout = nn.Dropout(0.5)
+        self.relu = nn.ReLU()
+
+    def _head(self, x):
         x = self.dense1(x)
         x = self.bn(x)
         x = self.relu(x)
@@ -67,3 +62,34 @@ class ShortChunkCNN(nn.Module):
         x = self.dense2(x)  # Raw logits; CrossEntropyLoss applies softmax
 
         return x
+
+
+class ShortChunkCNN(ShortChunkEncoder, _DenseHead):
+    """Early fusion: stems are stacked as input channels and share every conv layer."""
+
+    def __init__(self, n_channels=64, n_class=6, in_channels=1):
+        super().__init__(n_channels=n_channels, in_channels=in_channels)
+        self._build_head(self.out_dim, n_channels*4, n_class)
+
+    def forward(self, x):
+        return self._head(super().forward(x))
+
+
+class LateFusionCNN(_DenseHead):
+    """Late fusion: one encoder per stem (own conv weights and BatchNorm statistics), embeddings
+    concatenated, then a shared dense head. Input is the same (B, S, n_mels, T) as early fusion."""
+
+    def __init__(self, n_channels=64, n_class=6, n_stems=2):
+        super().__init__()
+        self.branches = nn.ModuleList(ShortChunkEncoder(n_channels=n_channels) for _ in range(n_stems))
+        self._build_head(n_stems * n_channels*4, n_channels*4, n_class)
+
+    def forward(self, x):
+        emb = torch.cat([branch(x[:, i:i + 1]) for i, branch in enumerate(self.branches)], dim=1)
+        return self._head(emb)
+
+
+def build_model(n_class, stems=("mix",), fusion="early", n_channels=64):
+    if fusion == "late" and len(stems) > 1:
+        return LateFusionCNN(n_channels=n_channels, n_class=n_class, n_stems=len(stems))
+    return ShortChunkCNN(n_channels=n_channels, n_class=n_class, in_channels=len(stems))

@@ -1,0 +1,19 @@
+# Data (downloaded in DeepMIR_hw1.ipynb)
+dataset_A/
+dataset_B/
+separated_A/
+separated_B/
+features/
+*.zip
+
+# Checkpoints and training outputs
+checkpoints/
+*.pt
+wandb/
+predictions_*.json
+
+# Environment / OS
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+.DS_Store
