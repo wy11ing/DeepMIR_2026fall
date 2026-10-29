@@ -94,3 +94,48 @@ class ChunkMidiDataset(Dataset):
 
     def __getitem__(self, idx):
         return {"input_ids": torch.tensor(self.chunks[idx])}
+
+class RandomCropDataset(Dataset):
+    """
+    Bar-aligned windows of seq_len tokens at a random start, drawn fresh every time an item is read.
+
+    Unlike ChunkMidiDataset nothing is thrown away: any bar can start a window (so a song's ending is seen
+    as often as its middle), and songs shorter than seq_len are used whole and padded with pad_token
+    (the loss ignores padding). One epoch draws round(len / seq_len) windows per song (at least 1), so it
+    covers about every token once whatever seq_len is, and epochs of runs with different seq_len hold the
+    same amount of music.
+    deterministic=True (validation): the k-th window of a song always gets the same start.
+    """
+    def __init__(self, sequences, seq_len, is_bar, pad_token, bos_token_id=None, eos_token_id=None,
+                 deterministic=False, seed=0):
+        self.seq_len, self.pad_token, self.deterministic, self.seed = seq_len, pad_token, deterministic, seed
+        self.rng = np.random.default_rng(seed)
+        self.seqs, self.starts, self.index = [], [], []
+        for ids in sequences:
+            if bos_token_id is not None:
+                ids = [bos_token_id] + ids
+            if eos_token_id is not None:
+                ids = ids + [eos_token_id]
+            bars = np.array([0] + [i for i, t in enumerate(ids) if is_bar(t)])  # 0: the song's start (BOS)
+            last = len(ids) - seq_len
+            # every bar that still fills a whole window, plus the first one after that, so the window
+            # that ends on EOS (or just before) is reachable too
+            starts = bars[bars <= last]
+            later = bars[bars > max(last, 0)]
+            if len(later):
+                starts = np.r_[starts, later[0]]
+            song = len(self.seqs)
+            self.seqs.append(ids)
+            self.starts.append(np.unique(starts))
+            self.index += [song] * max(1, round(len(ids) / seq_len))
+
+    def __len__(self):
+        return len(self.index)
+
+    def __getitem__(self, idx):
+        song = self.index[idx]
+        rng = np.random.default_rng((self.seed, idx)) if self.deterministic else self.rng
+        start = int(rng.choice(self.starts[song]))
+        window = self.seqs[song][start:start + self.seq_len]
+        window = window + [self.pad_token] * (self.seq_len - len(window))
+        return {"input_ids": torch.tensor(window)}

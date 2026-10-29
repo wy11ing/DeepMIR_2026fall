@@ -1,0 +1,17 @@
+# Tested with Python 3.12. Versions below are the ones in the working .venv.
+# torch is left loose so pip can pick the right build (CUDA / MPS / CPU) for the machine.
+torch>=2.6
+transformers==5.19.0
+miditok==3.1.0
+symusic==0.6.0
+numpy==2.5.3
+tqdm==4.70.1
+wandb==0.30.0             # training logs (pass --no_wandb to skip it)
+pretty_midi==0.2.11.post0 # MIDI I/O: eval_midi.py, accomp_data.py, generate_accomp.py, HW2_scripts/
+pandas==3.1.0             # generate_accomp.py, melody_dependence.py, HW2_scripts/eval_bonus.py
+matplotlib==3.11.2        # eval_midi.py --scape_plot_dir, report/ figures
+gdown==6.5.1              # notebook: POP909 and checkpoint downloads
+
+# Optional, not installed by -r: render_wav.py (MIDI -> WAV) needs tinysoundfont. Install it without its
+# dependencies; the only one is pyaudio, for live playback, which needs the system PortAudio library:
+#   pip install --no-deps tinysoundfont==0.3.7

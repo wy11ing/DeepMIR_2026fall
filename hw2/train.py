@@ -250,6 +250,8 @@ def main():
             print(f"  new best, saved to {out_dir / 'best'}")
             wandb.run.summary["best_val_loss"] = best_val
             wandb.run.summary["best_val_perplexity"] = math.exp(best_val)
+        # weights only (no optimizer state), so each epoch can be listened to with generate.py --ckpt_dir
+        model.save_pretrained(out_dir / f"epoch_{epoch:03d}")
         # Epoch finished: a resume from here starts at the beginning of the next epoch
         save_checkpoint(out_dir / "last", model, optimizer, scheduler, args, epoch + 1, 0, step, best_val)
 
