@@ -164,6 +164,9 @@ falls on a bar line. Training and prompts use the same alignment.
 | `tokenizer.py` | optional: pre-tokenize POP909 for `train.py --tok_dir` (older pipeline, no beat alignment) |
 | `HW2_scripts/` | the TA's scripts: `tokenization.py`, `eval_basic.py`, `eval_bonus.py` |
 
+## Generation Results
+Available at [Google Drive](https://drive.google.com/drive/folders/1r2L-dWBzSG3BOLt9sxn50oJM1P1TEUPi?usp=sharing). Note the best results of continuation is `task_B_cont_cp_005_temp1_topk0_topp095`
+
 ## References
 
 - Huang & Yang (2020). [Pop Music Transformer](https://arxiv.org/abs/2002.00212) (REMI).
