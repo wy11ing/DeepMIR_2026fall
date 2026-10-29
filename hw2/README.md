@@ -116,19 +116,6 @@ python eval_midi.py --midi_dir generated_cp --output_csv generated_cp/metrics.cs
 - `--scape_plot_dir` saves one self-similarity matrix and fitness scape plot per song. `--no_si` skips SI, which is
   the slowest metric.
 
-### Report figures
-
-```bash
-python report/make_real_reference.py --out_dir report/real32   # 100 random 32-bar POP909 windows as the real-data reference
-python eval_midi.py --midi_dir report/real32 --output_csv report/real32_metrics.csv --scape_plot_dir report/real32_scape_plots
-python report/compare_runs.py      # REMI vs. CP across epochs: report/tables.md, fig1-fig5
-python report/context_length.py    # CP with 512 vs. 2048 tokens: report/context_length.md, fig6
-```
-
-These read generated folders laid out as `remi/{generated,cont}_00X_temp1_topk0_topp095/`,
-`cp_transformer/{generated_cp,cont_cp}_00X_temp1_topk0_topp095/` and `cp_2048/`, for epochs 001, 003 and 005. The
-notebook's sections 4–5 write to exactly these folders.
-
 ## Method
 
 **Beat alignment.** POP909's MIDI bar lines often don't match the music, so `dataset.load_beat_aligned_score` warps
@@ -173,12 +160,9 @@ falls on a bar line. Training and prompts use the same alignment.
 | `generate_cp.py` | CP: Task A, or Task B with `--prompt_dir` |
 | `train_accomp.py`, `accomp_data.py`, `accomp_model.py` | bonus: training, tokens and data, BART variant |
 | `generate_accomp.py` | bonus: generation, optional sampling sweep scored with `eval_bonus.py` |
-| `diag_s2s.py` | bonus: checks whether the encoder-decoder uses the melody (validation loss with the real, a wrong, or no melody) |
-| `melody_dependence.py` | bonus: how much generated piano depends on its melody (key, chroma, chord agreement) |
 | `eval_midi.py` | Task A / B metrics (H1, H4, GS, SI) and scape plots, straight from MIDI |
 | `tokenizer.py` | optional: pre-tokenize POP909 for `train.py --tok_dir` (older pipeline, no beat alignment) |
 | `HW2_scripts/` | the TA's scripts: `tokenization.py`, `eval_basic.py`, `eval_bonus.py` |
-| `report/` | report, real-data reference, comparison scripts and figures |
 
 ## References
 
