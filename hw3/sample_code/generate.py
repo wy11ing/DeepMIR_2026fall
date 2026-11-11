@@ -14,11 +14,11 @@ import torch
 from diffusers import StableAudioPipeline
 from diffusers.models.embeddings import get_1d_rotary_pos_embed
 
-from cfg import cfg
+from cfg import cfg, apg, MomentumBuffer
 
 
 @torch.no_grad()
-def generate(pipe, prompt, guidance_scale=7.0, num_inference_steps=100, audio_end_in_s=10.0, seed=0):
+def generate(pipe, prompt, guidance_scale=7.0, num_inference_steps=100, audio_end_in_s=10.0, seed=0, use_apg=False, momentum=0.0, eta=0.0, norm_threshold=0.0):
     device = pipe._execution_device
     sampling_rate = pipe.vae.config.sampling_rate
 
@@ -42,6 +42,9 @@ def generate(pipe, prompt, guidance_scale=7.0, num_inference_steps=100, audio_en
         use_real=True, repeat_interleave_real=False,
     )
 
+    if use_apg:
+        buffer = MomentumBuffer(momentum)
+
     # 3. Denoising loop
     for t in pipe.progress_bar(pipe.scheduler.timesteps):
         latent_model_input = pipe.scheduler.scale_model_input(torch.cat([latents] * 2), t)
@@ -53,7 +56,10 @@ def generate(pipe, prompt, guidance_scale=7.0, num_inference_steps=100, audio_en
             return_dict=False,
         )[0]
         noise_pred_uncond, noise_pred_cond = noise_pred.chunk(2)
-        noise_pred = cfg(noise_pred_uncond, noise_pred_cond, guidance_scale)  # <- your implementation
+        if use_apg:
+            noise_pred = apg(noise_pred_uncond, noise_pred_cond, guidance_scale, buffer, eta, norm_threshold)
+        else:
+            noise_pred = cfg(noise_pred_uncond, noise_pred_cond, guidance_scale)  # <- your implementation
         latents = pipe.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).prev_sample
 
     # 4. Decode
@@ -70,11 +76,15 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", default="out.wav")
     parser.add_argument("--check", action="store_true", help="compare with StableAudioPipeline")
+    parser.add_argument("--apg", action="store_true", help="Use adaptive projected guidance")
+    parser.add_argument("--momentum", type=float, default=0.0)
+    parser.add_argument("--eta", type=float, default=0.0)
+    parser.add_argument("--norm_threshold", type=float, default=0.0)
     args = parser.parse_args()
 
     pipe = StableAudioPipeline.from_pretrained("stabilityai/stable-audio-open-1.0", torch_dtype=torch.float16)
     pipe = pipe.to("cuda")
-    audio = generate(pipe, args.prompt, args.scale, args.steps, args.seconds, args.seed)
+    audio = generate(pipe, args.prompt, args.scale, args.steps, args.seconds, args.seed, args.apg, args.momentum, args.eta, args.norm_threshold)
     sf.write(args.out, audio.T.float().cpu().numpy(), pipe.vae.config.sampling_rate)
     print(f"Saved to {args.out}")
 
